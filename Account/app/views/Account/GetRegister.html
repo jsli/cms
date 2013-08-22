@@ -1,0 +1,53 @@
+{{set . "title" "Register"}}
+{{template "header.html" .}}
+
+<h1>Register:</h1>
+
+<div id="login">
+  <form action="{{url "Account.PostRegister"}}" method="POST">
+	{{with $field := field "regUser.UserName" .}}
+    <p class="field">
+      <label>Login Name:</label>
+	  <input type="text" name="{{$field.Name}}" size="19" value="{{or $field.Flash $field.Value}}" />
+	  <span class="error">{{$field.Error}}</span>
+    </p>
+	{{end}}
+
+	{{with $field := field "regUser.NickName" .}}
+    <p class="field">
+      <label>Nick Name:</label>
+	  <input type="text" name="{{$field.Name}}" size="19" value="{{or $field.Flash $field.Value}}" />
+	  <span class="error">{{$field.Error}}</span>
+    </p>
+	{{end}}
+
+	{{with $field := field "regUser.Email" .}}
+    <p class="field">
+      <label>Email:</label>
+	  <input type="text" name="{{$field.Name}}" size="19" value="{{or $field.Flash $field.Value}}" />
+	  <span class="error">{{$field.Error}}</span>
+    </p>
+	{{end}}
+
+	{{with $field := field "regUser.PasswordStr" .}}
+    <p class="field">
+      <label>Password:</label>
+	  <input type="password" name="{{$field.Name}}" size="19" value="{{or $field.Flash $field.Value}}" />
+	  <span class="error">{{$field.Error}}</span>
+    </p>
+	{{end}}
+
+	{{with $field := field "regUser.ConfirmPwdStr" .}}
+    <p class="field">
+      <label>Confirm Password:</label>
+	  <input type="password" name="{{$field.Name}}" size="19" value="{{or $field.Flash $field.Value}}" />
+	  <span class="error">{{$field.Error}}</span>
+    </p>
+	{{end}}
+    <p class="buttons">
+      <input type="submit" value="Account register" />
+    </p>
+  </form>
+</div>
+
+{{template "footer.html" .}}
