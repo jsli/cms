@@ -13,14 +13,6 @@
     </p>
 	{{end}}
 
-	{{with $field := field "regUser.NickName" .}}
-    <p class="field">
-      <label>Nick Name:</label>
-	  <input type="text" name="{{$field.Name}}" size="19" value="{{or $field.Flash $field.Value}}" />
-	  <span class="error">{{$field.Error}}</span>
-    </p>
-	{{end}}
-
 	{{with $field := field "regUser.Email" .}}
     <p class="field">
       <label>Email:</label>

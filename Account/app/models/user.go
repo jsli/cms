@@ -1,26 +1,162 @@
 package models
 
 import (
-	"fmt"
 	"code.google.com/p/go.crypto/bcrypt"
-	"github.com/robfig/revel"
-	"regexp"
+	"errors"
+	"fmt"
+	"labix.org/v2/mgo"
 	"labix.org/v2/mgo/bson"
 )
 
 const (
 	DEBUG = true
-	DEBUG_PWD = true
 )
 
-var USERNAME_REX, PWD_REX, NICKNAME_REX *regexp.Regexp
+const (
+	ROLE_SUPERUSER = 1 // superuser is the KING. It should be created manually, and it cannot be deleted.
+	ROLE_ADMIN     = 2
+	ROLE_NORMAL    = 3
+	ROLE_ANONYMOUS = 4
+)
 
-func init() {
-	USERNAME_REX = regexp.MustCompile(`^[a-z0-9_]{6,16}$`)
-	PWD_REX = regexp.MustCompile(`^[\x01-\xfe]{8,20}$`)
+const (
+	DbName         = "account"
+	CollectionName = "user"
+)
 
-	//NICKNAME_REX = regexp.MustCompile(`^[a-zA-Z\xa0-\xff_][0-9a-zA-Z\xa0-\xff_]{3,15}$`)
-	NICKNAME_REX = USERNAME_REX
+const (
+	SuperUserName  = "SuperUser"
+	SuperUserPwd   = "lijinsong"
+	SuperUserEmail = "manson.li3307@gmail.com"
+)
+
+const (
+	POWER_EDIT_ADMIN_USER  = "edit_admin_user"
+	POWER_EDIT_NORMAL_USER = "edit_normal_user"
+)
+
+/*
+ *key indicate power's name,
+ *value indicate power's description
+ *check key only for accessibility
+ */
+type Power map[string]string
+
+/*
+ * TODO: Index and Primary Key???
+ */
+type User struct {
+	Id           bson.ObjectId `bson:"_id"`
+	UserName     string        `bson:"user_name"`
+	HashPassword []byte        `bson:"password"`
+	Role         int           `bson:"role"`
+	Email        string        `bson:"email"`
+	PowerMap     Power         `bson:"power"`
+	IsLogined    bool          `bson:"is_logined"`
+}
+
+func (user *User) String() string {
+	return fmt.Sprintf("User(username = %s, role = %d)\n",
+		user.UserName, user.Role)
+}
+
+/*---------------query-----------------*/
+//TODO:
+//	support selection query
+func (user *User) ListUsers(session *mgo.Session, page int, count int) ([]*User, error) {
+	if !user.IsAdmin() {
+		fmt.Println("Permission Denied!")
+		return nil, errors.New("Permission Denied!")
+	}
+	uc := session.DB(DbName).C(CollectionName)
+	query := uc.Find(nil)
+	if query != nil {
+		results := []*User{}
+		query.Skip((page - 1) * count).Limit(count).All(&results)
+		if len(results) > 0 {
+			fmt.Println("--->>>dump user list: ", len(results), "<<<---")
+			for _, item := range results {
+				fmt.Println(item)
+			}
+			return results, nil
+		}
+	}
+	return nil, errors.New("Cannot find users!")
+}
+
+func (user *User) GetUserById(session *mgo.Session, id bson.ObjectId) (*User, error) {
+	if !user.IsAdmin() {
+		fmt.Println("Permission Denied!")
+		return nil, errors.New("Permission Denied!")
+	}
+	uc := session.DB(DbName).C(CollectionName)
+	result := User{}
+	err := uc.FindId(id).One(&result)
+	if err == nil {
+		fmt.Println("find user : ", result)
+		return &result, nil
+	}
+	fmt.Println(fmt.Sprintf("Cannot find user by id: %s", id))
+	return nil, errors.New(fmt.Sprintf("Cannot find user by id: %s", id))
+}
+
+func (user *User) GetUserByName(session *mgo.Session, name string) (*User, error) {
+	if !user.IsAdmin() {
+		fmt.Println("Permission Denied!")
+		return nil, errors.New("Permission Denied!")
+	}
+	return getUserByM(session, bson.M{"user_name": name})
+}
+
+func (user *User) GetUserByEmail(session *mgo.Session, email string) (*User, error) {
+	if !user.IsAdmin() {
+		fmt.Println("Permission Denied!")
+		return nil, errors.New("Permission Denied!")
+	}
+	return getUserByM(session, bson.M{"email": email})
+}
+
+func getUserByM(session *mgo.Session, m bson.M) (*User, error) {
+	uc := session.DB(DbName).C(CollectionName)
+	result := User{}
+	err := uc.Find(m).One(&result)
+	if err == nil {
+		fmt.Println("find user : ", result)
+		return &result, nil
+	}
+	return nil, errors.New(fmt.Sprintf("Cannot find user by %s", m))
+}
+
+/*------------insert-------------*/
+
+
+func (user *User) SaveUser(session *mgo.Session) error {
+	if DEBUG {
+		fmt.Println("SaveUser in ------> User")
+	}
+	uc := session.DB(DbName).C(CollectionName)
+
+	i, _ := uc.Find(bson.M{"user_name": user.UserName}).Count()
+	if i != 0 {
+		return errors.New(fmt.Sprintf("Duplicated User: %s\n", user.UserName))
+	}
+
+	i, _ = uc.Find(bson.M{"email": user.Email}).Count()
+	if i != 0 {
+		return errors.New(fmt.Sprintf("Duplicated Email: %s\n", user.Email))
+	}
+
+	user.Id = bson.NewObjectId()
+	err := uc.Insert(user)
+	if err != nil {
+		return errors.New(fmt.Sprintf("Register User failed: %s\n", user.UserName))
+	} else {
+		return nil
+	}
+}
+
+func (user *User) IsAdmin() bool {
+	return user.Role == ROLE_ADMIN || user.Role == ROLE_SUPERUSER
 }
 
 func generatePwdByte(pwd string) []byte {
@@ -28,189 +164,33 @@ func generatePwdByte(pwd string) []byte {
 	return pwdByte
 }
 
-/*
- * real struct which was persisted in database
- */
-type User struct {
-	Id bson.ObjectId "_id"
-	UserName string
-	Email    string
-	NickName string
-	HashPassword []byte
-}
-
-func (user *User) String() string {
-	if !DEBUG_PWD {
-		return fmt.Sprintf("User(username = %s, email = %s, nick name = %s)",
-			user.UserName, user.Email, user.NickName)
-	} else {
-		return fmt.Sprintf("User(username = %s, email = %s, nick name = %s), pwd = %s",
-			user.UserName, user.Email, user.NickName, user.HashPassword)
-	}
-}
-
-func GetAllUsers() error {
-	manager, err := NewDbManager()
-	if err != nil {
-		fmt.Println("New db manager error")
-		return err
-	}
-	defer manager.Close()
-	manager.GetAllUsers()
-	return nil
-}
-
-func (user *User) SaveUser() error {
-	if DEBUG {
-		fmt.Println("SaveUser in ------> User")
-	}
-
-	manager, err := NewDbManager()
-	if err != nil {
-		fmt.Println("New db manager error")
-		return err
-	}
-	defer manager.Close()
-
-	err = manager.SaveUser(user)
-	if err != nil {
-		fmt.Println("save user failed")
-		return err
-	} else {
-		fmt.Println("Save User success: ", user)
+func GetUserByName(session *mgo.Session, name string) *User {
+	user := User{}
+	uc := session.DB(DbName).C(CollectionName)
+	err := uc.Find(bson.M{"user_name": name}).One(&user)
+	if err == nil {
+		return &user
 	}
 	return nil
 }
 
-/*
- * used for login
- */
-type LoginUser struct {
-	User
-	PasswordStr string
-}
-
-func (loginUser *LoginUser) Validate(v *revel.Validation) {
-	v.Check(loginUser.UserName,
-		revel.Required{},
-		revel.Match{USERNAME_REX},
-	).Message("UserName or password is wrong")
-
-	v.Check(loginUser.PasswordStr,
-		revel.Required{},
-		revel.Match{PWD_REX},
-	).Message("UserName or password is wrong")
-
-	//0: generate passing str
-	//1: get pwd bytes from database
-	//2: compare them
-	//test here
-	pwd := "testtest"
-	//rPwd := "testtest"
-	rPwd := "testtest"
-	v.Required(pwd == rPwd).Message("user name or password is wrong!!!")
-}
-
-/*
- * used for register
- */
-type RegUser struct {
-	User
-	PasswordStr string
-	ConfirmPwdStr string
-}
-
-func (regUser *RegUser) SaveUser() error {
-	if DEBUG {
-		fmt.Println("SaveUser in ------> RegUser")
+func GetUserByEmail(session *mgo.Session, email string) *User {
+	user := User{}
+	uc := session.DB(DbName).C(CollectionName)
+	err := uc.Find(bson.M{"email": email}).One(&user)
+	if err == nil {
+		return &user
 	}
-	regUser.HashPassword = generatePwdByte(regUser.PasswordStr)
-	err := regUser.User.SaveUser()
+	return nil
+}
+
+func UpdateUser(session *mgo.Session, user User) error {
+	uc := session.DB(DbName).C(CollectionName)
+	_, err := uc.Upsert(bson.M{"user_name": user.UserName}, user)
+	if err == nil {
+		fmt.Println("update ", user.UserName, " ok")
+	} else {
+		fmt.Println("update ", user.UserName, "failed :", err)
+	}
 	return err
-}
-
-func (regUser *RegUser) Validate(v *revel.Validation) {
-	//Check workflow:
-	//see @validation.go Check(obj interface{}, checks ...Validator)
-	//Validator is an interface, v.Check invoke v.Apply for each validator.
-	//Further, v.Apply invoke validator.IsSatisfied with passing obj.
-	//Checking result is an object of ValidationResult. The field Ok of ValidationResult
-	//would be true if checking success. Otherwise, Ok would be false, and another filed
-	//Error of ValidationResult would be non-nil, an ValidationError filled with error message
-	//should be assigned to Error.
-	v.Check(regUser.UserName,
-		revel.Required{},
-		revel.Match{USERNAME_REX},
-		DuplicatedUser{},
-	)
-
-	v.Check(regUser.NickName,
-		revel.Required{},
-		revel.Match{NICKNAME_REX},
-	)
-
-	//validation provide an convenient method for checking Email.
-	//revel has a const for email rexgep, Email will use the rex to check email string.
-	v.Email(regUser.Email)
-	v.Check(regUser.Email,
-		DuplicatedEmail{},
-	)
-
-	v.Check(regUser.PasswordStr,
-		revel.Required{},
-		revel.Match{PWD_REX},
-	)
-	v.Check(regUser.ConfirmPwdStr,
-		revel.Required{},
-		revel.Match{PWD_REX},
-	)
-	//pwd and comfirm_pwd should be equal
-	v.Required(regUser.PasswordStr == regUser.ConfirmPwdStr).Message("The passwords do not match.")
-}
-
-/*
- *used for updating user
- */
-type UpdateUser RegUser
-
-/*
- * a validator for checking duplicated user
- */
-type DuplicatedUser struct{}
-
-func (dup DuplicatedUser) IsSatisfied(obj interface{}) bool {
-	manager, err := NewDbManager()
-	if err != nil {
-		fmt.Println("New db manager error")
-		return false
-	}
-	defer manager.Close()
-	
-	registed := manager.IsUserRegistedByName(obj.(string))
-	return !registed
-}
-
-func (dup DuplicatedUser) DefaultMessage() string {
-	return "Duplicated User"
-}
-
-/*
- * a validator for checking duplicated email
- */
-type DuplicatedEmail struct{}
-
-func (dup DuplicatedEmail) IsSatisfied(obj interface{}) bool {
-	manager, err := NewDbManager()
-	if err != nil {
-		fmt.Println("New db manager error")
-		return false
-	}
-	defer manager.Close()
-	
-	registed := manager.IsUserRegistedByEmail(obj.(string))
-	return !registed
-}
-
-func (dup DuplicatedEmail) DefaultMessage() string {
-	return "Duplicated Email"
 }
