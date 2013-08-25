@@ -17,9 +17,7 @@ func (regUser *RegUser) SaveUser(session *mgo.Session) error {
 	if DEBUG {
 		fmt.Println("SaveUser in ------> RegUser")
 	}
-	regUser.HashPassword = generatePwdByte(regUser.PasswordStr)
-	regUser.IsLogined = true
-	regUser.Role = ROLE_NORMAL
+	regUser.HashPassword = GeneratePwdByte(regUser.PasswordStr)
 	err := regUser.User.SaveUser(session)
 	return err
 }

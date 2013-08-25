@@ -4,6 +4,7 @@ import (
 	"code.google.com/p/go.crypto/bcrypt"
 	"github.com/robfig/revel"
 	"labix.org/v2/mgo"
+	"labix.org/v2/mgo/bson"
 )
 
 type LoginUser struct {
@@ -22,12 +23,6 @@ func (loginUser *LoginUser) Validate(v *revel.Validation, session *mgo.Session) 
 		revel.Match{PWD_REX},
 		LegalUserValidator{session, loginUser.UserName},
 	).Message("UserName or password is wrong")
-
-	if !v.HasErrors() {
-		user := GetUserByName(session, loginUser.UserName)
-		user.IsLogined = true
-		UpdateUser(session, *user)
-	}
 }
 
 /*
@@ -39,8 +34,8 @@ type LegalUserValidator struct {
 }
 
 func (legal LegalUserValidator) IsSatisfied(obj interface{}) bool {
-	user := GetUserByName(legal.session, legal.name)
-	if user != nil {
+	user, err := getUserByM(legal.session, bson.M{"user_name": legal.name})
+	if user != nil && err == nil {
 		err := bcrypt.CompareHashAndPassword(user.HashPassword, []byte(obj.(string)))
 		if err == nil {
 			return true

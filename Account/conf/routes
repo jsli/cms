@@ -8,8 +8,17 @@ GET     /                                       App.Index
 GET     /login                                  Account.GetLogin
 POST    /login                                  Account.PostLogin
 GET     /logout                                 Account.Logout
+
 GET     /register                               Account.GetRegister
 POST    /register                               Account.PostRegister
+
+#TODO:  alternative params!!!
+GET     /account/list                           Account.ListUsers
+GET     /account/list/:role/:page/:count        Account.ListUsers
+
+#create admin user only
+GET     /account/create                               Account.GetCreate
+POST    /account/create                               Account.PostCreate
 
 # Ignore favicon requests
 GET     /favicon.ico                            404

@@ -56,20 +56,31 @@ type User struct {
 }
 
 func (user *User) String() string {
-	return fmt.Sprintf("User(username = %s, role = %d)\n",
-		user.UserName, user.Role)
+	return fmt.Sprintf("User(id = %s, username = %s, role = %d)\n",
+		user.Id.Hex(), user.UserName, user.Role)
 }
 
 /*---------------query-----------------*/
 //TODO:
 //	support selection query
-func (user *User) ListUsers(session *mgo.Session, page int, count int) ([]*User, error) {
-	if !user.IsAdmin() {
-		fmt.Println("Permission Denied!")
-		return nil, errors.New("Permission Denied!")
+func (user *User) ListUsers(session *mgo.Session, page int, count int, role int) ([]*User, error) {
+	var perm_key string
+	switch role {
+		case ROLE_NORMAL:
+			perm_key = POWER_EDIT_NORMAL_USER
+		case ROLE_ADMIN:
+			perm_key = POWER_EDIT_ADMIN_USER
+		default:
+			perm_key = POWER_EDIT_ADMIN_USER
 	}
+	check := CheckPermission(user, perm_key)
+	if !check {
+		return nil, errors.New("Permission Denied")
+	}
+
+	fmt.Println("list users: role = ", role, "count = ", count, "page = ", page)
 	uc := session.DB(DbName).C(CollectionName)
-	query := uc.Find(nil)
+	query := uc.Find(bson.M{"role":role})
 	if query != nil {
 		results := []*User{}
 		query.Skip((page - 1) * count).Limit(count).All(&results)
@@ -79,40 +90,36 @@ func (user *User) ListUsers(session *mgo.Session, page int, count int) ([]*User,
 				fmt.Println(item)
 			}
 			return results, nil
+		} else {
+			fmt.Println("empty list")
 		}
 	}
-	return nil, errors.New("Cannot find users!")
+	return nil, errors.New(fmt.Sprintf("Cannot find users! from %d to %d", (page-1)*count+1, page*count))
 }
 
-func (user *User) GetUserById(session *mgo.Session, id bson.ObjectId) (*User, error) {
-	if !user.IsAdmin() {
-		fmt.Println("Permission Denied!")
-		return nil, errors.New("Permission Denied!")
+func (user *User) LoadSelf(session *mgo.Session) error {
+	dbUser, err := getUserByM(session, bson.M{"user_name": user.UserName})
+	if dbUser != nil && err == nil {
+		user.Id = dbUser.Id
+		user.Email = dbUser.Email
+		user.HashPassword = dbUser.HashPassword
+		user.IsLogined = dbUser.IsLogined
+		user.PowerMap = dbUser.PowerMap
+		user.Role = dbUser.Role
+		return nil
 	}
-	uc := session.DB(DbName).C(CollectionName)
-	result := User{}
-	err := uc.FindId(id).One(&result)
-	if err == nil {
-		fmt.Println("find user : ", result)
-		return &result, nil
-	}
-	fmt.Println(fmt.Sprintf("Cannot find user by id: %s", id))
-	return nil, errors.New(fmt.Sprintf("Cannot find user by id: %s", id))
+	return err
 }
 
-func (user *User) GetUserByName(session *mgo.Session, name string) (*User, error) {
-	if !user.IsAdmin() {
-		fmt.Println("Permission Denied!")
-		return nil, errors.New("Permission Denied!")
-	}
+func GetUserById(session *mgo.Session, id string) (*User, error) {
+	return getUserByM(session, bson.M{"_id": bson.ObjectIdHex(id)})
+}
+
+func GetUserByName(session *mgo.Session, name string) (*User, error) {
 	return getUserByM(session, bson.M{"user_name": name})
 }
 
-func (user *User) GetUserByEmail(session *mgo.Session, email string) (*User, error) {
-	if !user.IsAdmin() {
-		fmt.Println("Permission Denied!")
-		return nil, errors.New("Permission Denied!")
-	}
+func GetUserByEmail(session *mgo.Session, email string) (*User, error) {
 	return getUserByM(session, bson.M{"email": email})
 }
 
@@ -124,73 +131,111 @@ func getUserByM(session *mgo.Session, m bson.M) (*User, error) {
 		fmt.Println("find user : ", result)
 		return &result, nil
 	}
+	fmt.Println(fmt.Sprintf("Cannot find user by %s", m))
 	return nil, errors.New(fmt.Sprintf("Cannot find user by %s", m))
 }
 
 /*------------insert-------------*/
-
-
 func (user *User) SaveUser(session *mgo.Session) error {
-	if DEBUG {
-		fmt.Println("SaveUser in ------> User")
-	}
-	uc := session.DB(DbName).C(CollectionName)
+	//dont check permission, all kinds of user can register
+	fmt.Println("SaveUser in ------> User")
 
+	if can, err := canBeSaved(session, user); !can {
+		return err
+	}
+	user.Id = bson.NewObjectId()
+	return saveUser(session, user)
+}
+
+func canBeSaved(session *mgo.Session, user *User) (bool, error) {
+	var err error = nil
+	var can bool = true
+	uc := session.DB(DbName).C(CollectionName)
+	//duplicated user check again!!!
 	i, _ := uc.Find(bson.M{"user_name": user.UserName}).Count()
 	if i != 0 {
-		return errors.New(fmt.Sprintf("Duplicated User: %s\n", user.UserName))
+		err = errors.New(fmt.Sprintf("Duplicated User: %s\n", user.UserName))
+		can = false
+	} else {
+		//duplicated email check again!!!
+		i, _ = uc.Find(bson.M{"email": user.Email}).Count()
+		if i != 0 {
+			err = errors.New(fmt.Sprintf("Duplicated Email: %s\n", user.Email))
+			can = false
+		}
 	}
-
-	i, _ = uc.Find(bson.M{"email": user.Email}).Count()
-	if i != 0 {
-		return errors.New(fmt.Sprintf("Duplicated Email: %s\n", user.Email))
+	if !can {
+		fmt.Println("cannot save user ", user)
+		fmt.Println("err_msg: ", err)
 	}
+	return can, err
+}
 
-	user.Id = bson.NewObjectId()
-	err := uc.Insert(user)
+func saveUser(session *mgo.Session, obj interface{}) error {
+	uc := session.DB(DbName).C(CollectionName)
+	err := uc.Insert(obj)
 	if err != nil {
-		return errors.New(fmt.Sprintf("Register User failed: %s\n", user.UserName))
+		fmt.Println("cannot insert ", obj.(string), ", cause of ", err)
+		return errors.New(fmt.Sprintf("Save User failed: %s\n", obj.(string)))
 	} else {
 		return nil
 	}
 }
 
+/*------------delete--------------*/
+func (user *User) DeleteUserById(session *mgo.Session) error {
+	return deleteUserByM(session, bson.M{"_id": user.Id})
+}
+
+func deleteUserByM(session *mgo.Session, m bson.M) error {
+	uc := session.DB(DbName).C(CollectionName)
+	err := uc.Remove(m)
+	if err != nil {
+		fmt.Println(fmt.Sprintf("Cannot delete user by %s", m))
+	} else {
+		fmt.Println(fmt.Sprintf("delete user by %s", m))
+	}
+	return err
+}
+
+/*----------update------------*/
+func (user *User) UpdateUser(session *mgo.Session) error {
+	//need check permission here
+	return updateUserByM(session, bson.M{"user_name": user.UserName}, user)
+}
+
+func updateUserByM(session *mgo.Session, m bson.M, obj interface{}) error {
+	uc := session.DB(DbName).C(CollectionName)
+	err := uc.Update(m, obj)
+	if err == nil {
+		fmt.Println("update ", obj, " ok")
+	} else {
+		fmt.Println("update ", obj, "failed :", err)
+	}
+	return err
+}
+
+/*
+ *permission check!
+ * TODO:
+ * 		check power map!!!
+ */
 func (user *User) IsAdmin() bool {
 	return user.Role == ROLE_ADMIN || user.Role == ROLE_SUPERUSER
 }
 
-func generatePwdByte(pwd string) []byte {
+func CheckPermission(user *User, perm_key string) bool {
+	power := user.PowerMap
+	access := (power[perm_key] == perm_key)
+	if !access {
+		fmt.Println("Permission Denied : ", user, " miss permission ", perm_key)
+	} else {
+		fmt.Println("Permission Passed : ", user, " has permission ", perm_key)
+	}
+	return access
+}
+
+func GeneratePwdByte(pwd string) []byte {
 	pwdByte, _ := bcrypt.GenerateFromPassword([]byte(pwd), bcrypt.DefaultCost)
 	return pwdByte
-}
-
-func GetUserByName(session *mgo.Session, name string) *User {
-	user := User{}
-	uc := session.DB(DbName).C(CollectionName)
-	err := uc.Find(bson.M{"user_name": name}).One(&user)
-	if err == nil {
-		return &user
-	}
-	return nil
-}
-
-func GetUserByEmail(session *mgo.Session, email string) *User {
-	user := User{}
-	uc := session.DB(DbName).C(CollectionName)
-	err := uc.Find(bson.M{"email": email}).One(&user)
-	if err == nil {
-		return &user
-	}
-	return nil
-}
-
-func UpdateUser(session *mgo.Session, user User) error {
-	uc := session.DB(DbName).C(CollectionName)
-	_, err := uc.Upsert(bson.M{"user_name": user.UserName}, user)
-	if err == nil {
-		fmt.Println("update ", user.UserName, " ok")
-	} else {
-		fmt.Println("update ", user.UserName, "failed :", err)
-	}
-	return err
 }

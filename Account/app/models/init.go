@@ -17,35 +17,32 @@ func init() {
 	//NICKNAME_REX = regexp.MustCompile(`^[a-zA-Z\xa0-\xff_][0-9a-zA-Z\xa0-\xff_]{3,15}$`)
 	NICKNAME_REX = USERNAME_REX
 
+	//create an global user object for testing
 	session, err := mgo.Dial("localhost")
 	if err == nil {
-		user := User{}
-		uc := session.DB(DbName).C(CollectionName)
-		err = uc.Find(bson.M{"user_name": SuperUserName}).One(&user)
-		if err == nil {
-			SuperUser = &user
-			fmt.Println(SuperUser)
+		SuperUser, _ = GetUserByName(session, SuperUserName)
+		if SuperUser != nil {
+			fmt.Println("Get SuperUser")
 		} else {
 			fmt.Println("Cannot get SuperUser")
 			power := Power{POWER_EDIT_ADMIN_USER: POWER_EDIT_ADMIN_USER, POWER_EDIT_NORMAL_USER: POWER_EDIT_NORMAL_USER}
-			user = User{
+			SuperUser = &User{
 				Id:           bson.NewObjectId(),
 				UserName:     SuperUserName,
 				Role:         ROLE_SUPERUSER,
-				HashPassword: generatePwdByte(SuperUserPwd),
+				HashPassword: GeneratePwdByte(SuperUserPwd),
 				Email:        SuperUserEmail,
 				PowerMap:     power,
 				IsLogined:    false,
 			}
-			err := uc.Insert(user)
+			err := SuperUser.SaveUser(session)
 			if err == nil {
 				fmt.Println("Create the super user!!!")
-				SuperUser = &user
-				fmt.Println(SuperUser)
 			} else {
-				fmt.Println("can't create the super user!!!")
+				fmt.Println("Can't create the super user!!!")
 			}
 		}
+		fmt.Println(SuperUser)
 	} else {
 		fmt.Println("User init failed!")
 	}
