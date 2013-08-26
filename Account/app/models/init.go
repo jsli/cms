@@ -20,7 +20,8 @@ func init() {
 	//create an global user object for testing
 	session, err := mgo.Dial("localhost")
 	if err == nil {
-		SuperUser, _ = GetUserByName(session, SuperUserName)
+		dal := NewDalMgo(session)
+		SuperUser, _ = dal.GetUserByName(SuperUserName)
 		if SuperUser != nil {
 			fmt.Println("Get SuperUser")
 		} else {
@@ -35,7 +36,7 @@ func init() {
 				PowerMap:     power,
 				IsLogined:    false,
 			}
-			err := SuperUser.SaveUser(session)
+			err := dal.SaveUser(SuperUser)
 			if err == nil {
 				fmt.Println("Create the super user!!!")
 			} else {

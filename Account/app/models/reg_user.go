@@ -18,7 +18,8 @@ func (regUser *RegUser) SaveUser(session *mgo.Session) error {
 		fmt.Println("SaveUser in ------> RegUser")
 	}
 	regUser.HashPassword = GeneratePwdByte(regUser.PasswordStr)
-	err := regUser.User.SaveUser(session)
+	dal := NewDalMgo(session)
+	err := dal.SaveUser(&regUser.User)
 	return err
 }
 

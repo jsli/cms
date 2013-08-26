@@ -17,21 +17,36 @@ func init() {
 	revel.OnAppStart(revmgo.AppInit)
 }
 
-func (c Account) Index() revel.Result {
-	//	models.SuperUser.ListUsers(c.MongoSession, 1, 10)
-	//	models.SuperUser.SaveUser(c.MongoSession)
+func (c Account)testDal() {
+//		ops := models.NewDalMgo(c.MongoSession)
+	//		ops.ListUsers(models.SuperUser,  1, 10, models.ROLE_NORMAL)
+
+	//		user, _ := ops.GetUserByName("wangying")
+	//		fmt.Println(user)
+	//		user, _ := ops.GetUserByEmail("admintest@gmail.com")
+	//		fmt.Println(user)
+	//		user, _ := ops.GetUserById("52184b318223a72374000002")
+	//		fmt.Println(user)
+
 	//	user := models.User{
-	//		UserName:     "testuser",
+	//		UserName:     "dalUser",
 	//		Role:         models.ROLE_NORMAL,
 	//		HashPassword: models.GeneratePwdByte("12345678"),
-	//		Email:        "testuser@mail.com",
+	//		Email:        "testuser@mail.com111",
 	//		IsLogined:    false,
 	//	}
-	//	user.SaveUser(c.MongoSession)
+	//	ops.SaveUser(user)
 
-	//	models.CheckPermission(models.SuperUser, models.POWER_EDIT_ADMIN_USER)
-	//	models.CheckPermission(models.SuperUser, models.POWER_EDIT_NORMAL_USER)
-	//	models.CheckPermission(models.SuperUser, "fack_permission")
+	//ops.DeleteUserById(models.SuperUser, "5218bf858223a70fe0000002")
+
+//	user, _ := ops.GetUserById("521b62448223a71e3a000002")
+//	user.UserName = "adminadmin####"
+//	user.Email = "admintest@gmail.com11!!!!!!!!"
+//	ops.UpdateUserById(models.SuperUser, user)
+}
+
+func (c Account) Index() revel.Result {
+	c.testDal()
 	return c.Render()
 }
 
@@ -52,10 +67,11 @@ func (c Account) PostLogin(loginUser *models.LoginUser) revel.Result {
 	}
 
 	//update login status
-	err := loginUser.LoadSelf(c.MongoSession)
-	if err == nil {
-		loginUser.IsLogined = true
-		loginUser.UpdateUser(c.MongoSession)
+	dal := models.NewDalMgo(c.MongoSession)
+	user, err := dal.GetUserByName(loginUser.UserName)
+	if user != nil && err == nil {
+		user.IsLogined = true
+		dal.UpdateUserById(user, user)
 	}
 
 	//step 3: save cookie, flash or session
@@ -69,10 +85,11 @@ func (c Account) PostLogin(loginUser *models.LoginUser) revel.Result {
 
 func (c Account) Logout() revel.Result {
 	//logout status
-	user, err := models.GetUserByName(c.MongoSession, c.Session["user"])
+	dal := models.NewDalMgo(c.MongoSession)
+	user, err := dal.GetUserByName(c.Session["user"])
 	if user != nil && err == nil {
 		user.IsLogined = false
-		user.UpdateUser(c.MongoSession)
+		dal.UpdateUserById(user, user)
 	}
 	for k := range c.Session {
 		delete(c.Session, k)
@@ -117,33 +134,6 @@ func (c Account) PostRegister(regUser *models.RegUser) revel.Result {
 
 	//step 4: rediret
 	return c.Redirect(revel.MainRouter.Reverse("account.index", make(map[string]string)).Url)
-}
-
-func (c Account) ListUsers() revel.Result {
-	var page, count, role int
-	c.Params.Bind(&role, "role")
-	c.Params.Bind(&count, "count")
-	c.Params.Bind(&page, "page")
-	if role <= 0 || role > 3{
-		role = models.ROLE_NORMAL // normal user default
-	}
-	if count <= 0{
-		count = 10 // 10 per-page default
-	}
-	if page <= 0 {
-		page = 1 // first page default
-	}
-	
-	user, err := models.GetUserByName(c.MongoSession, c.Session["user"])
-	if user == nil || err != nil {
-		c.Validation.Error("Please login first")
-		c.Validation.Keep();
-		c.FlashParams();
-		return c.Redirect(Account.GetLogin)
-	}
-	
-	user.ListUsers(c.MongoSession, page, count, role)
-	return c.Render()
 }
 
 func (c Account) GetCreate() revel.Result {

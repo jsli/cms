@@ -4,7 +4,6 @@ import (
 	"code.google.com/p/go.crypto/bcrypt"
 	"github.com/robfig/revel"
 	"labix.org/v2/mgo"
-	"labix.org/v2/mgo/bson"
 )
 
 type LoginUser struct {
@@ -34,7 +33,8 @@ type LegalUserValidator struct {
 }
 
 func (legal LegalUserValidator) IsSatisfied(obj interface{}) bool {
-	user, err := getUserByM(legal.session, bson.M{"user_name": legal.name})
+	dal := NewDalMgo(legal.session)
+	user, err := dal.GetUserByName(legal.name)
 	if user != nil && err == nil {
 		err := bcrypt.CompareHashAndPassword(user.HashPassword, []byte(obj.(string)))
 		if err == nil {
